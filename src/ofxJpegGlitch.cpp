@@ -18,12 +18,20 @@ void ofxJpegGlitch::setJpegBuffer(ofBuffer &buf) {
     this->buf = buf;
 }
 
+void ofxJpegGlitch::setImage(ofPixelsRef pix) {
+    setPixels(pix);
+}
+
 void ofxJpegGlitch::setImage(ofImage &image) {
-    ofSaveImage(image.getPixelsRef(), buf, OF_IMAGE_FORMAT_JPEG);
+    setPixels(image.getPixelsRef());
 }
 
 void ofxJpegGlitch::setPixels(ofPixelsRef pix) {
-    ofSaveImage(pix, buf, OF_IMAGE_FORMAT_JPEG);
+//#ifdef USE_OFXTURBOJPEG
+//    turbo.save(buf, pix, jpegQuality);
+//#else
+    ofSaveImage(pix, buf, OF_IMAGE_FORMAT_JPEG, (ofImageQualityType)jpegQuality);
+//#endif
 }
 
 MarkerType ofxJpegGlitch::calcMarkerType(unsigned char *bytes, int cur) {
@@ -221,11 +229,29 @@ void ofxJpegGlitch::glitch() {
 
 ofImage &ofxJpegGlitch::getImage() {
     if(!bImageLoaded && buf.size()) {
+//        ofDisableArbTex();
+//        ofSetMinMagFilters(GL_NEAREST, GL_NEAREST);
+        
+#if USE_OFXTURBOJPEG
+        bImageLoaded = turbo.load(buf, image);
+#else
         image.loadImage(buf);
         bImageLoaded = true;
+#endif
     }
-    
     return image;
+}
+
+bool ofxJpegGlitch::forceLoadImage() {
+#if USE_OFXTURBOJPEG
+    ofxTurboJpeg tj;
+    bImageLoaded = tj.load(buf, image.getPixelsRef());
+    image.update();
+#else
+    image.loadImage(buf);
+    bImageLoaded = true;
+#endif
+    return bImageLoaded;
 }
 
 void ofxJpegGlitch::saveImage() {
