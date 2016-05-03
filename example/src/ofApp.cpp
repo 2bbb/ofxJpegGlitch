@@ -1,72 +1,46 @@
-#include "ofApp.h"
+#include "ofMain.h"
 
-//--------------------------------------------------------------
-void ofApp::setup(){
-    jpeg.setup(20, 40, 80);
-    grabber.initGrabber(640, 480);
-}
+#include "ofxJpegGlitch.h"
 
-//--------------------------------------------------------------
-void ofApp::update(){
-    grabber.update();
-    if(grabber.isFrameNew()) {
-        jpeg.setPixels(grabber.getPixelsRef());
+class ofApp : public ofBaseApp {
+    ofxJpegGlitch jpeg;
+    ofVideoGrabber grabber;
+    bool bGrab{false};
+public:
+    void setup() {
+        jpeg.setup(10, 20, 40);
+        grabber.setup(1920, 1080);
+    }
+    
+    void update() {
+        jpeg.setDataGlitchness(ofRandom(10, 20));
+        jpeg.setQNGlitchness(ofRandom(10, 20));
+        jpeg.setDHTGlitchness(ofRandom(10, 20));
+        jpeg.setJpegQuality(ofRandom(10, 20));
+        grabber.update();
+        if(bGrab && grabber.isFrameNew()) {
+            ofPixels pix = grabber.getPixels();
+            jpeg.setPixels(std::move(pix));
+        }
         jpeg.glitch();
+        ofSetWindowTitle(ofToString(ofGetFrameRate()));
     }
-}
-
-//--------------------------------------------------------------
-void ofApp::draw(){
-    ofBaseDraws *baseDraw;
-    if(jpeg.getImage().isAllocated()) {
-        baseDraw = &(jpeg.getImage());
-    } else {
-        baseDraw = &grabber;
+    
+    void draw() {
+        ofSetColor(255, 255, 255);
+        jpeg.getImage().draw(0, 0, ofGetWidth(), ofGetHeight());
     }
-    baseDraw->draw(0, 0, ofGetWidth(), ofGetHeight());
-}
+    
+    void keyPressed(int key) {
+        if(key == ' ') bGrab = true;
+    }
+    
+    void keyReleased(int key) {
+        if(key == ' ') bGrab = false;
+    }
+};
 
-//--------------------------------------------------------------
-void ofApp::keyPressed(int key){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::keyReleased(int key){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::mouseMoved(int x, int y ){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::mouseDragged(int x, int y, int button){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::mousePressed(int x, int y, int button){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::mouseReleased(int x, int y, int button){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::windowResized(int w, int h){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::gotMessage(ofMessage msg){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::dragEvent(ofDragInfo dragInfo){ 
-
+int main() {
+    ofSetupOpenGL(1920, 1080, OF_WINDOW);
+    ofRunApp(new ofApp());
 }

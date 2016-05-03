@@ -6,6 +6,8 @@
 
 #include "ofxJpegGlitch.h"
 
+#include "ofMain.h"
+
 const static float randomMax = 1000000.0f;
 
 void ofxJpegGlitch::setup(int data, int qn, int dht) {
@@ -14,27 +16,47 @@ void ofxJpegGlitch::setup(int data, int qn, int dht) {
     dhtBlock  = dht;
 }
 
-void ofxJpegGlitch::setJpegBuffer(ofBuffer &buf) {
-    this->buf = buf;
+void ofxJpegGlitch::setJpegBuffer(const ofBuffer &buf) {
+    waitingBuffers.send(buf);
 }
 
-void ofxJpegGlitch::setImage(ofPixelsRef pix) {
+void ofxJpegGlitch::setJpegBuffer(ofBuffer &&buf) {
+    waitingBuffers.send(std::move(buf));
+}
+
+void ofxJpegGlitch::setImage(const ofPixels &pix) {
     setPixels(pix);
 }
 
-void ofxJpegGlitch::setImage(ofImage &image) {
-    setPixels(image.getPixelsRef());
+void ofxJpegGlitch::setImage(ofPixels &&pix) {
+    setPixels(std::move(pix));
 }
 
-void ofxJpegGlitch::setPixels(ofPixelsRef pix) {
-//#ifdef USE_OFXTURBOJPEG
-//    turbo.save(buf, pix, jpegQuality);
-//#else
-    ofSaveImage(pix, buf, OF_IMAGE_FORMAT_JPEG, (ofImageQualityType)jpegQuality);
-//#endif
+void ofxJpegGlitch::setImage(const ofImage &image) {
+    setPixels(image.getPixels());
 }
 
-MarkerType ofxJpegGlitch::calcMarkerType(unsigned char *bytes, int cur) {
+void ofxJpegGlitch::setImage(ofImage &&image) {
+    setPixels(std::move(image.getPixels()));
+}
+
+void ofxJpegGlitch::setPixels(const ofPixels &pix) {
+    if(needEncodingPixels.empty()) {
+        needEncodingPixels.send(pix);
+        std::thread th(std::bind(&ofxJpegGlitch::encode, this));
+        th.detach();
+    }
+}
+
+void ofxJpegGlitch::setPixels(ofPixels &&pix) {
+    if(needEncodingPixels.empty()) {
+        needEncodingPixels.send(std::move(pix));
+        std::thread th(std::bind(&ofxJpegGlitch::encode, this));
+        th.detach();
+    }
+}
+
+MarkerType ofxJpegGlitch::calcMarkerType(unsigned char *bytes, int cur) const {
     unsigned char b0 = bytes[cur];
     if(b0 == 0xFF) {
         unsigned char b = bytes[cur + 1];
@@ -92,12 +114,34 @@ MarkerType ofxJpegGlitch::calcMarkerType(unsigned char *bytes, int cur) {
     return MT_Unknown;
 }
 
-int ofxJpegGlitch::calcLength(unsigned char *bytes, int cur) {
+int ofxJpegGlitch::calcLength(unsigned char *bytes, int cur) const {
     return bytes[cur] * 256 + bytes[cur + 1];
 }
 
-void ofxJpegGlitch::glitch() {
-    unsigned char* bytes = (unsigned char *)buf.getBinaryBuffer();
+bool ofxJpegGlitch::glitch() {
+    std::thread th(std::bind(&ofxJpegGlitch::glitch_impl, this));
+    th.detach();
+    return true;
+}
+
+void ofxJpegGlitch::encode() {
+    ofPixels pix;
+    if(!needEncodingPixels.tryReceive(pix)) return;
+    ofBuffer buffer;
+    ofSaveImage(pix, buffer, OF_IMAGE_FORMAT_JPEG, (ofImageQualityType)jpegQuality);
+    if(!bClosed) waitingBuffers.send(std::move(buffer));
+}
+
+void ofxJpegGlitch::glitch_impl() {
+    ofBuffer buffer;
+    if(!waitingBuffers.empty()) {
+        waitingBuffers.tryReceive(encoded_buffer);
+    }
+    buffer = encoded_buffer;
+    
+    if(!encoded_buffer.size()) return;
+    
+    unsigned char* bytes = (unsigned char *)buffer.getData();
     int cur = 0;
     MarkerType startMarker = calcMarkerType(bytes, cur);
     if(startMarker != MT_SOI) {
@@ -111,7 +155,7 @@ void ofxJpegGlitch::glitch() {
     int height = 0;
     int resetMarkerNum = 0;
     
-    while(cur < buf.size()) {
+    while(cur < buffer.size()) {
         MarkerType marker = calcMarkerType(bytes, cur);
         cur += 2;
         
@@ -212,7 +256,7 @@ void ofxJpegGlitch::glitch() {
         }
     }
     
-    while(cur < buf.size()) {
+    while(cur < buffer.size()) {
         if(bytes[cur] == 0xFF && bytes[cur] != 0x0) {
             cur += 2;
         } else {
@@ -221,47 +265,35 @@ void ofxJpegGlitch::glitch() {
                 *(bytes + cur) = rand() % 255;
             }
             
-            cur++;
+            ++cur;
         }
     }
-    bImageLoaded = false;
+    
+    ofImage img;
+    img.setUseTexture(false);
+    ofImageLoadSettings setting;
+    setting.accurate = true;
+    img.load(buffer, setting);
+    if(!bClosed) processedImages.send(img);
 }
 
-ofImage &ofxJpegGlitch::getImage() {
-    if(!bImageLoaded && buf.size()) {
-//        ofDisableArbTex();
-//        ofSetMinMagFilters(GL_NEAREST, GL_NEAREST);
-        
-#if USE_OFXTURBOJPEG
-        bImageLoaded = turbo.load(buf, image);
-#else
-        image.loadImage(buf);
+const ofImage &ofxJpegGlitch::getImage(int timeout) {
+    ofImage tmp;
+    if(!processedImages.empty() && processedImages.tryReceive(tmp, timeout)) {
+        image = std::move(tmp);
+        image.setUseTexture(true);
+        image.update();
         bImageLoaded = true;
-#endif
     }
     return image;
 }
 
-bool ofxJpegGlitch::forceLoadImage() {
-#if USE_OFXTURBOJPEG
-    ofxTurboJpeg tj;
-    bImageLoaded = tj.load(buf, image.getPixelsRef());
-    image.update();
-#else
-    image.loadImage(buf);
-    bImageLoaded = true;
-#endif
-    return bImageLoaded;
+bool ofxJpegGlitch::saveImage() const {
+    return saveImage(ofToString(ofGetFrameNum()) + ".tif");
 }
 
-void ofxJpegGlitch::saveImage() {
-    this->saveImage(ofToString(ofGetFrameNum()) + ".tif");
-}
-
-void ofxJpegGlitch::saveImage(string fileName) {
-    if(!bImageLoaded && buf.size()) {
-        image.loadImage(buf);
-        bImageLoaded = true;
-    }
-    image.saveImage(fileName);
+bool ofxJpegGlitch::saveImage(const std::string &fileName) const {
+    if(!isGlitchLoaded()) return false;
+    image.save(fileName);
+    return true;
 }
