@@ -273,8 +273,7 @@ void ofxJpegGlitch::glitch_impl() {
     img.setUseTexture(false);
     ofImageLoadSettings setting;
     setting.accurate = true;
-    img.load(buffer, setting);
-    if(!bClosed) processedImages.send(img);
+    if(img.load(buffer, setting) && !bClosed) processedImages.send(img);
 }
 
 const ofImage &ofxJpegGlitch::getImage(int timeout) {
