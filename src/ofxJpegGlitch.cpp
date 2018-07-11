@@ -271,9 +271,10 @@ void ofxJpegGlitch::glitch_impl() {
     
     ofImage img;
     img.setUseTexture(false);
-    ofImageLoadSettings setting;
-    setting.accurate = true;
-    if(img.load(buffer, setting) && !bClosed) processedImages.send(img);
+//    ofImageLoadSettings setting;
+//    setting.accurate = true;
+//    if(img.load(buffer, setting) && !bClosed) processedImages.send(img);
+    if(img.load(buffer) && !bClosed) processedImages.send(img);
 }
 
 const ofImage &ofxJpegGlitch::getImage(int timeout) {
@@ -293,6 +294,7 @@ bool ofxJpegGlitch::saveImage() const {
 
 bool ofxJpegGlitch::saveImage(const std::string &fileName) const {
     if(!isGlitchLoaded()) return false;
-    image.save(fileName);
+//    image.saveImage(fileName);
+//    ofSaveImage(image.getPixels(), fileName);
     return true;
 }
